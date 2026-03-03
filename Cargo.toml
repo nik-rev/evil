@@ -1,0 +1,10 @@
+[package]
+name = "evil"
+description = "reserved"
+repository = "https://github.com/nik-rev/auto-default"
+authors = ["Nik Revenco <pm@nikrev.com>"]
+version = "0.0.0-reserved"
+license = "MIT OR Apache-2.0"
+# keywords = ["macros", "default", "field", "values", "boilerplate"]
+# categories = ["development-tools", "development-tools::procedural-macro-helpers", "no-std", "no-std::no-alloc", "rust-patterns"]
+edition = "2024"
