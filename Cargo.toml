@@ -1,10 +1,14 @@
 [package]
 name = "evil"
-description = "reserved"
-repository = "https://github.com/nik-rev/auto-default"
+description = "Makes the ? operator call .unwrap()"
+repository = "https://github.com/nik-rev/evil"
 authors = ["Nik Revenco <pm@nikrev.com>"]
-version = "0.0.0-reserved"
+version = "0.1.0"
 license = "MIT OR Apache-2.0"
-# keywords = ["macros", "default", "field", "values", "boilerplate"]
-# categories = ["development-tools", "development-tools::procedural-macro-helpers", "no-std", "no-std::no-alloc", "rust-patterns"]
+keywords = ["development", "eyre", "anyhow", "error", "error-handling"]
+categories = ["rust-patterns", "development-tools", "no-std", "no-std::no-alloc", "development-tools::debugging"]
 edition = "2024"
+
+[features]
+default = ["std"]
+std = []
