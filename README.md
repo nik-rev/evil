@@ -1,4 +1,4 @@
-# The `evil` crate
+# The `evil` crate 😈
 
 <!-- cargo-reedme: start -->
 
