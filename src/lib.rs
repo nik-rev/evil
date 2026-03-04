@@ -229,7 +229,7 @@ impl<T> FromResidual<Option<Infallible>> for Result<T> {
     #[inline]
     #[track_caller]
     fn from_residual(_: Option<Infallible>) -> Self {
-        panic!("`evil::Result`: invoked the `?` operator on an `Option::None` value")
+        panic!("invoked `?` on a `None` value")
     }
 }
 
@@ -239,7 +239,7 @@ impl<T, E: core::fmt::Debug> FromResidual<core::result::Result<Infallible, E>> f
     #[track_caller]
     fn from_residual(residual: core::result::Result<Infallible, E>) -> Self {
         let core::result::Result::Err(err) = residual;
-        panic!("invoked the `?` operator on a `Result::Err` value: {err:?}")
+        panic!("invoked `?` on an `Err` value: {err:?}")
     }
 }
 
