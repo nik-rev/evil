@@ -21,7 +21,7 @@ cargo-reedme: info-end -->
 ![msrv](https://img.shields.io/badge/msrv-nightly-blue?style=flat-square&logo=rust)
 [![github](https://img.shields.io/github/stars/nik-rev/evil)](https://github.com/nik-rev/evil)
 
-This crate lets you use the `?` operator as a shorthand for `.unwrap()`. Works on both [`Result`](https://doc.rust-lang.org/stable/core/result/enum.Result.html) and [`Option`](https://doc.rust-lang.org/stable/core/option/enum.Option.html).
+This crate lets you use the `?` operator as a shorthand for `.unwrap()`. Works on both [`Result`](https://doc.rust-lang.org/stable/core/result/enum.Result.html) and [`Option`](https://doc.rust-lang.org/stable/core/option/enum.Option.html)!
 
 ```toml
 evil = "0.1"
@@ -59,7 +59,7 @@ fn user_theme_preference() {
 
 ### After
 
-Return [`evil::Result<()>`](https://docs.rs/evil/latest/evil/enum.Result.html) directly from your test’s function.
+Use [`evil::Result<()>`](https://docs.rs/evil/latest/evil/enum.Result.html) as the return type of your test functions:
 
 ```rust
 #[test]
@@ -139,7 +139,9 @@ This is **even more verbose** than just using `.unwrap()`s. At least when unwrap
 
 ## Wow, the `evil` crate is so cool! But Nightly Rust?
 
-This crate requires `nightly` rust. *But hold on!* That **does not** mean your project needs to have a `nightly` MSRV (Minimum Supported Rust Version).
+This crate requires `nightly` rust, because customizing behavior of the `?` operator requires the [`Try`](https://doc.rust-lang.org/stable/core/ops/try_trait/trait.Try.html) trait.
+
+*But hold on!* That **does not** mean your project needs to have a `nightly` MSRV (Minimum Supported Rust Version).
 
 Your test suite’s MSRV can be `nightly`, but your project’s MSRV can be a stable Rust version. Tests aren’t shipped to your users, so you’re free to improve
 your developer experience writing them as much as you’d like.
@@ -162,8 +164,8 @@ Now, all the Nightly Rust components will be used for tests. You get to use unst
 But when it comes to shipping the code to users, the actual code will build on Stable Rust and not use any unstable features. I use [`cargo hack`](https://github.com/taiki-e/cargo-hack) in GitHub Actions CI to check that my project always builds with my MSRV:
 
 ```yml
-# This GitHub runs action on every commit to the `main` branch,
-# and on every Pull Request
+# This GitHub action runs on every commit to the `main` branch,
+# and also on every Pull Request
 
 name: Check
 on:
@@ -181,6 +183,102 @@ jobs:
       - uses: taiki-e/install-action@cargo-hack
 
       - run: cargo hack check --each-feature --locked --rust-version --ignore-private --workspace --lib --bins --keep-going
+```
+
+## How does it work?
+
+The `?` operator is syntax sugar for the [`Try`](https://doc.rust-lang.org/stable/core/ops/try_trait/trait.Try.html) trait. This expression:
+
+```rust
+let html = fetch()?;
+```
+
+Desugars to the following:
+
+```rust
+let html = match Try::branch(fetch()) {
+    ControlFlow::Continue(v) => v,
+    ControlFlow::Break(r) => return FromResidual::from_residual(r),
+};
+```
+
+Whatever `fetch()` returns, it must implement the `Try` trait. Assume that `fetch()` returns `Result<String, HtmlError>`, then `Try::branch` is this function:
+
+```rust
+<Result<String, HtmlError> as Try>::branch
+```
+
+This implementation comes from the standard library. The function `branch` is this:
+
+```rust
+impl<T, E> ops::Try for Result<T, E> {
+    fn branch(self) -> ControlFlow<Self::Residual, T> {
+        match self {
+            Ok(c) => ControlFlow::Continue(c),
+            Err(e) => ControlFlow::Break(Err(e)),
+        }
+    }
+}
+```
+
+Now, consider if `fetch()` returned an `Err(HtmlError)`. That means `branch` returned `ControlFlow::Break(Err(e))`. So our `match` becomes:
+
+```rust
+let html = match ControlFlow::Break(Err(e)) {
+    ControlFlow::Continue(v) => v,
+    ControlFlow::Break(r) => return FromResidual::from_residual(r),
+};
+```
+
+This hits the 2nd arm, and evaluates to this:
+
+```rust
+let html = return FromResidual::from_residual(r);
+```
+
+We hit an error, and we do an **early return**. This is the short-circuiting behavior of the `?` operator.
+
+The `FromResidual` is a helper trait which tells us what exactly to return. The value of the expression `FromResidual::from_residual(r)` is determined by type inference.
+
+Let’s say we are inside of a function that returns [`evil::Result`](https://docs.rs/evil/latest/evil/enum.Result.html):
+
+```rust
+fn process_webpage() -> evil::Result<()> {
+    let html = return FromResidual::from_residual(r);
+}
+```
+
+The type of `r` is `Result<!, HtmlError>`. This is the “residual”, it is essentially an “always-fail” version of a type implementing `Try`:
+
+- For `Option<T>`, this is `Option<!>`, which is always just `Option::None` - because `None` is considered the failure case of an `Option`.
+- For any `Result<T, E>`, it is always `Result<!, E>` because `Result::Err` is the failure case of a `Result`
+
+So `r` has type `Result<!, HtmlError>` and expression `FromResidual::from_residual(r)` must have type `evil::Result<()>`
+
+This is the implementation that gets used:
+
+```rust
+impl<T, E: Debug> FromResidual<core::result::Result<Infallible, E>> for Result<T> {
+    #[track_caller]
+    fn from_residual(residual: core::result::Result<Infallible, E>) -> Self {
+        let core::result::Result::Err(err) = residual;
+        panic!("invoked `?` on an `Err` value: {err:?}")
+    }
+}
+```
+
+Because `Result<!, HtmlError>` is always an `Err`, we can just infallibly get the `Err` value:
+
+```rust
+let core::result::Result::Err(err) = residual;
+```
+
+Usually, this `from_residual` would actually return `Self` here - so we would *return* from the function `process_webpage`.
+
+But the way that [`evil::Result`](https://docs.rs/evil/latest/evil/enum.Result.html) implements `Try` is such that `panic!()` will be called instead:
+
+```rust
+panic!("invoked `?` on an `Err` value: {err:?}")
 ```
 
 <!-- cargo-reedme: end -->

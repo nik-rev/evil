@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [Unreleased]: https://github.com/nik-rev/evil/compare/v0.1.3...HEAD
 
+### Added
+
+- Added methods `into_ok`, `as_ok`, and `as_ok_mut` for extracting value inside the `Ok` variant 
+- Implemented `Copy` and `Clone`
+- Implemented `PartialOrd` and `Ord`
+- Implemented `PartialEq` and `Eq`
+- Added `FromResidual` implementation for `Poll` types
+- Implemented `IntoIterator` for `&evil::Result`, `&mut evil::Result` and `Result`
+- Implemented `Sum` and `Product` on iterators of `Result`, `evil::Result`, and `Option`s
+
+### Fixed
+
+- Fixed the `Termination` implementation to be the same as `std`'s
+
 ## [v0.1.3] - 2026-03-04
 
 [v0.1.3]: https://github.com/nik-rev/evil/compare/v0.1.2...v0.1.3

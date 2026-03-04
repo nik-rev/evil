@@ -4,7 +4,7 @@
 //! ![msrv](https://img.shields.io/badge/msrv-nightly-blue?style=flat-square&logo=rust)
 //! [![github](https://img.shields.io/github/stars/nik-rev/evil)](https://github.com/nik-rev/evil)
 //!
-//! This crate lets you use the `?` operator as a shorthand for `.unwrap()`. Works on both [`Result`](core::result::Result) and [`Option`](core::option::Option).
+//! This crate lets you use the `?` operator as a shorthand for `.unwrap()`. Works on both [`Result`](core::result::Result) and [`Option`](core::option::Option)!
 //!
 //! ```toml
 #![doc = concat!(env!("CARGO_PKG_NAME"), " = ", "\"", env!("CARGO_PKG_VERSION_MAJOR"), ".", env!("CARGO_PKG_VERSION_MINOR"), "\"")]
@@ -44,7 +44,7 @@
 //!
 //! ## After
 //!
-//! Return [`evil::Result<()>`](Result) directly from your test's function.
+//! Use [`evil::Result<()>`](Result) as the return type of your test functions:
 //!
 //! ```
 //! # /*
@@ -128,7 +128,9 @@
 //!
 //! # Wow, the `evil` crate is so cool! But Nightly Rust?
 //!
-//! This crate requires `nightly` rust. *But hold on!* That **does not** mean your project needs to have a `nightly` MSRV (Minimum Supported Rust Version).
+//! This crate requires `nightly` rust, because customizing behavior of the `?` operator requires the [`Try`] trait.
+//!
+//! *But hold on!* That **does not** mean your project needs to have a `nightly` MSRV (Minimum Supported Rust Version).
 //!
 //! Your test suite's MSRV can be `nightly`, but your project's MSRV can be a stable Rust version. Tests aren't shipped to your users, so you're free to improve
 //! your developer experience writing them as much as you'd like.
@@ -151,8 +153,8 @@
 //! But when it comes to shipping the code to users, the actual code will build on Stable Rust and not use any unstable features. I use [`cargo hack`](https://github.com/taiki-e/cargo-hack) in GitHub Actions CI to check that my project always builds with my MSRV:
 //!
 //! ```yml
-//! # This GitHub runs action on every commit to the `main` branch,
-//! # and on every Pull Request
+//! # This GitHub action runs on every commit to the `main` branch,
+//! # and also on every Pull Request
 //!
 //! name: Check
 //! on:
@@ -171,22 +173,181 @@
 //!
 //!       - run: cargo hack check --each-feature --locked --rust-version --ignore-private --workspace --lib --bins --keep-going
 //! ```
+//!
+//! # How does it work?
+//!
+//! The `?` operator is syntax sugar for the [`Try`] trait. This expression:
+//!
+//! ```
+//! # /*
+//! let html = fetch()?;
+//! # */
+//! ```
+//!
+//! Desugars to the following:
+//!
+//! ```
+//! # /*
+//! let html = match Try::branch(fetch()) {
+//!     ControlFlow::Continue(v) => v,
+//!     ControlFlow::Break(r) => return FromResidual::from_residual(r),
+//! };
+//! # */
+//! ```
+//!
+//! Whatever `fetch()` returns, it must implement the `Try` trait. Assume that `fetch()` returns `Result<String, HtmlError>`, then `Try::branch` is this function:
+//!
+//! ```
+//! # /*
+//! <Result<String, HtmlError> as Try>::branch
+//! # */
+//! ```
+//!
+//! This implementation comes from the standard library. The function `branch` is this:
+//!
+//! ```
+//! # /*
+//! impl<T, E> ops::Try for Result<T, E> {
+//!     fn branch(self) -> ControlFlow<Self::Residual, T> {
+//!         match self {
+//!             Ok(c) => ControlFlow::Continue(c),
+//!             Err(e) => ControlFlow::Break(Err(e)),
+//!         }
+//!     }
+//! }
+//! # */
+//! ```
+//!
+//! Now, consider if `fetch()` returned an `Err(HtmlError)`. That means `branch` returned `ControlFlow::Break(Err(e))`. So our `match` becomes:
+//!
+//! ```
+//! # /*
+//! let html = match ControlFlow::Break(Err(e)) {
+//!     ControlFlow::Continue(v) => v,
+//!     ControlFlow::Break(r) => return FromResidual::from_residual(r),
+//! };
+//! # */
+//! ```
+//!
+//! This hits the 2nd arm, and evaluates to this:
+//!
+//! ```
+//! # /*
+//! let html = return FromResidual::from_residual(r);
+//! # */
+//! ```
+//!
+//! We hit an error, and we do an **early return**. This is the short-circuiting behavior of the `?` operator.
+//!
+//! The `FromResidual` is a helper trait which tells us what exactly to return. The value of the expression `FromResidual::from_residual(r)` is determined by type inference.
+//!
+//! Let's say we are inside of a function that returns [`evil::Result`](Result):
+//!
+//! ```
+//! # /*
+//! fn process_webpage() -> evil::Result<()> {
+//!     let html = return FromResidual::from_residual(r);
+//! }
+//! # */
+//! ```
+//!
+//! The type of `r` is `Result<!, HtmlError>`. This is the "residual", it is essentially an "always-fail" version of a type implementing `Try`:
+//!
+//! - For `Option<T>`, this is `Option<!>`, which is always just `Option::None` - because `None` is considered the failure case of an `Option`.
+//! - For any `Result<T, E>`, it is always `Result<!, E>` because `Result::Err` is the failure case of a `Result`
+//!
+//! So `r` has type `Result<!, HtmlError>` and expression `FromResidual::from_residual(r)` must have type `evil::Result<()>`
+//!
+//! This is the implementation that gets used:
+//!
+//! ```
+//! # /*
+//! impl<T, E: Debug> FromResidual<core::result::Result<Infallible, E>> for Result<T> {
+//!     #[track_caller]
+//!     fn from_residual(residual: core::result::Result<Infallible, E>) -> Self {
+//!         let core::result::Result::Err(err) = residual;
+//!         panic!("invoked `?` on an `Err` value: {err:?}")
+//!     }
+//! }
+//! # */
+//! ```
+//!
+//! Because `Result<!, HtmlError>` is always an `Err`, we can just infallibly get the `Err` value:
+//!
+//! ```
+//! # /*
+//! let core::result::Result::Err(err) = residual;
+//! # */
+//! ```
+//!
+//! Usually, this `from_residual` would actually return `Self` here - so we would *return* from the function `process_webpage`.
+//!
+//! But the way that [`evil::Result`](Result) implements `Try` is such that `panic!()` will be called instead:
+//!
+//! ```
+//! # /*
+//! panic!("invoked `?` on an `Err` value: {err:?}")
+//! # */
+//! ```
 #![cfg_attr(not(feature = "std"), no_std)]
 #![feature(try_trait_v2)]
 #![feature(never_type)]
 #![allow(rustdoc::invalid_rust_codeblocks)]
 
 use core::convert::Infallible;
+use core::fmt;
+use core::fmt::Debug;
+use core::hash::Hash;
+use core::hash::Hasher;
+use core::iter::Product;
+use core::iter::Sum;
 use core::ops::ControlFlow;
 use core::ops::FromResidual;
 use core::ops::Try;
+use core::task::Poll;
 
-/// This is **always** [`Result::Ok`]
-///
-/// This is like [`core::result::Result`], but it's **impossible** to create a [`Result::Err`],
+/// This is like [`core::result::Result`], but it's **impossible** to create an [`Err`](Result::Err) value,
 /// because when you use the `?` operator, it *panics*.
 ///
+/// This is **always** an [`Ok`] value.
+///
 /// See the [crate-level](crate) documentation for more information.
+///
+/// # Definition
+///
+/// This `Result` is defined as a 2-variant `enum`, where the `Err` variant is *uninhabited* - it can never exist.
+///
+/// Why not represent `Result` as a newtype struct, then?
+///
+/// ```
+/// struct Result<T>(T);
+/// ```
+///
+/// Because that doesn't convey the semantics of "this is exactly like [`Result`], but it can never be [`Result::Err`]"
+///
+/// The `!` type is fantastic for use in documentation, and making the semantics of types clearer. That is exactly how we're using it here.
+///
+/// Consider a function that starts a web server, and only returns when an error is encountered:
+///
+/// ```
+/// # /*
+/// fn start_server(&self) -> HttpError {
+/// # */
+/// ```
+///
+/// It's not exactly obvious from the signature that this function really only returns an error, which means
+/// it can actually never return. Consider a refined signature, using the `!` type:
+///
+/// ```
+/// # /*
+/// fn start_server(&self) -> Result<!, HttpError> {
+/// # */
+/// ```
+///
+/// This time, the signature itself explains a lot more.
+///
+/// Despite `HttpError` and `Result<!, HttpError>` return types both having the same representation,
+/// the latter semantically makes more sense.
 pub enum Result<T = ()> {
     /// Contains the success value
     Ok(T),
@@ -194,37 +355,51 @@ pub enum Result<T = ()> {
     Err(!),
 }
 
+pub use Result::Ok;
+
 impl<T> Result<T> {
-    /// Extracts the [`Result::Ok`] value. Always succeeds.
+    /// Returns a reference to the [`Result::Ok`] value. Always succeeds.
+    #[inline]
+    pub fn as_ok(&self) -> &T {
+        match self {
+            Self::Ok(value) => value,
+            Self::Err(error) => match *error {},
+        }
+    }
+
+    /// Returns a mutable reference to the [`Result::Ok`] value. Always succeeds.
+    #[inline]
+    pub fn as_ok_mut(&mut self) -> &mut T {
+        match self {
+            Self::Ok(value) => value,
+            Self::Err(error) => match *error {},
+        }
+    }
+
+    /// Returns the [`Result::Ok`] value. Always succeeds.
+    #[inline]
     pub fn into_ok(self) -> T {
         let Result::Ok(value) = self;
         value
     }
 }
 
-pub use Result::Ok;
-
-/// Allows invoking the `?` operator on [`Option`], [`Result`], and [`evil::Result`](Result) from a try context of [`evil::Result`](Result)
 impl<T> Try for Result<T> {
     type Output = T;
     type Residual = Result<Infallible>;
 
-    /// `?` on a `T` to convert it into [`Result::Ok`]
     #[inline]
     fn from_output(output: Self::Output) -> Self {
         Self::Ok(output)
     }
 
-    /// `?` on a [`Result`] to convert it into `T` or panic
     #[inline]
-    #[track_caller]
     fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
         let Result::Ok(value) = self;
         ControlFlow::Continue(value)
     }
 }
 
-/// You can invoke `?` on an [`Option`] from a try context of [`evil::Result`](Result)
 impl<T> FromResidual<Option<Infallible>> for Result<T> {
     #[inline]
     #[track_caller]
@@ -233,8 +408,7 @@ impl<T> FromResidual<Option<Infallible>> for Result<T> {
     }
 }
 
-/// You can invoke `?` on a [`Result`](core::result::Result) from a try context of [`evil::Result`](Result)
-impl<T, E: core::fmt::Debug> FromResidual<core::result::Result<Infallible, E>> for Result<T> {
+impl<T, E: Debug> FromResidual<core::result::Result<Infallible, E>> for Result<T> {
     #[inline]
     #[track_caller]
     fn from_residual(residual: core::result::Result<Infallible, E>) -> Self {
@@ -243,26 +417,267 @@ impl<T, E: core::fmt::Debug> FromResidual<core::result::Result<Infallible, E>> f
     }
 }
 
-/// You can invoke `?` on a [`evil::Result`](Result) from a try context of [`evil::Result`](Result)
 impl<T> FromResidual<Result<Infallible>> for Result<T> {
     #[inline]
-    #[track_caller]
     fn from_residual(residual: Result<Infallible>) -> Self {
         match residual {}
     }
 }
 
-/// You can invoke `?` on a [`evil::Result`](Result) from a try context of [`Result`](core::result::Result)
 impl<T, E> FromResidual<Result<Infallible>> for core::result::Result<T, E> {
+    #[inline]
     fn from_residual(residual: Result<Infallible>) -> Self {
         match residual {}
     }
 }
 
-/// You can return [`evil::Result`](Result) from the `main` function and `#[test]`s
+impl<T> FromResidual<Result<Infallible>> for Poll<Option<Result<T>>> {
+    #[inline]
+    fn from_residual(x: Result<Infallible>) -> Self {
+        match x {}
+    }
+}
+
+impl<T, E> FromResidual<Result<Infallible>> for Poll<Option<core::result::Result<T, E>>> {
+    #[inline]
+    fn from_residual(x: Result<Infallible>) -> Self {
+        match x {}
+    }
+}
+
+impl<T> FromResidual<Result<Infallible>> for Poll<Result<T>> {
+    #[inline]
+    fn from_residual(x: Result<Infallible>) -> Self {
+        match x {}
+    }
+}
+
+impl<T, E> FromResidual<Result<Infallible>> for Poll<core::result::Result<T, E>> {
+    #[inline]
+    fn from_residual(x: Result<Infallible>) -> Self {
+        match x {}
+    }
+}
+
+impl<T: Copy> Copy for Result<T> {}
+
+impl<T: Hash> Hash for Result<T> {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_ok().hash(state);
+    }
+}
+
+impl<T: Debug> Debug for Result<T> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> core::fmt::Result {
+        <T as Debug>::fmt(self.as_ok(), f)
+    }
+}
+
 #[cfg(feature = "std")]
-impl<T> std::process::Termination for Result<T> {
-    fn report(self) -> std::process::ExitCode {
-        std::process::ExitCode::SUCCESS
+use std::process::ExitCode;
+#[cfg(feature = "std")]
+use std::process::Termination;
+
+#[cfg(feature = "std")]
+impl<T: Termination> Termination for Result<T> {
+    #[inline]
+    fn report(self) -> ExitCode {
+        T::report(self.into_ok())
+    }
+}
+
+impl<T> Clone for Result<T>
+where
+    T: Clone,
+{
+    #[inline]
+    fn clone(&self) -> Self {
+        Self::Ok(self.as_ok().clone())
+    }
+
+    #[inline]
+    fn clone_from(&mut self, source: &Self) {
+        self.as_ok_mut().clone_from(source.as_ok());
+    }
+}
+
+impl<A, V: FromIterator<A>> FromIterator<Result<A>> for Result<V> {
+    #[inline]
+    fn from_iter<I: IntoIterator<Item = Result<A>>>(iter: I) -> Result<V> {
+        Self::Ok(iter.into_iter().map(|value| value.into_ok()).collect())
+    }
+}
+
+impl<A, E: Debug, V: FromIterator<A>> FromIterator<core::result::Result<A, E>> for Result<V> {
+    #[track_caller]
+    #[inline]
+    fn from_iter<I: IntoIterator<Item = core::result::Result<A, E>>>(iter: I) -> Result<V> {
+        let values = iter.into_iter().map(|item| {
+            match item {
+                core::result::Result::Ok(value) => value,
+                core::result::Result::Err(err) => {
+                    panic!("failed to collect, encountered an `Err` value: {err:?}")
+                }
+            }
+        });
+
+        Result::Ok(V::from_iter(values))
+    }
+}
+
+impl<A, V: FromIterator<A>> FromIterator<Option<A>> for Result<V> {
+    #[track_caller]
+    #[inline]
+    fn from_iter<I: IntoIterator<Item = Option<A>>>(iter: I) -> Result<V> {
+        let values = iter.into_iter().map(|item| {
+            match item {
+                Some(value) => value,
+                None => {
+                    panic!("failed to collect, encountered a `None` value")
+                }
+            }
+        });
+
+        Result::Ok(V::from_iter(values))
+    }
+}
+
+impl<A, V: Product<A>> Product<Result<A>> for Result<V> {
+    #[inline]
+    fn product<I: Iterator<Item = Result<A>>>(iter: I) -> Self {
+        Self::Ok(iter.into_iter().map(|value| value.into_ok()).product())
+    }
+}
+
+impl<A, E: Debug, V: Product<A>> Product<core::result::Result<A, E>> for Result<V> {
+    #[track_caller]
+    #[inline]
+    fn product<I: IntoIterator<Item = core::result::Result<A, E>>>(iter: I) -> Self {
+        let values = iter.into_iter().map(|item| {
+            match item {
+                core::result::Result::Ok(value) => value,
+                core::result::Result::Err(err) => {
+                    panic!("failed to compute product, encountered an `Err` value: {err:?}")
+                }
+            }
+        });
+
+        Result::Ok(V::product(values))
+    }
+}
+
+impl<A, V: Product<A>> Product<Option<A>> for Result<V> {
+    #[track_caller]
+    #[inline]
+    fn product<I: Iterator<Item = Option<A>>>(iter: I) -> Self {
+        let values = iter.into_iter().map(|item| {
+            match item {
+                Some(value) => value,
+                None => {
+                    panic!("failed to compute product, encountered a `None` value")
+                }
+            }
+        });
+
+        Result::Ok(V::product(values))
+    }
+}
+
+impl<A, V: Sum<A>> Sum<Result<A>> for Result<V> {
+    #[inline]
+    fn sum<I: Iterator<Item = Result<A>>>(iter: I) -> Self {
+        Self::Ok(iter.into_iter().map(|value| value.into_ok()).sum())
+    }
+}
+
+impl<A, E: Debug, V: Sum<A>> Sum<core::result::Result<A, E>> for Result<V> {
+    #[track_caller]
+    #[inline]
+    fn sum<I: IntoIterator<Item = core::result::Result<A, E>>>(iter: I) -> Self {
+        let values = iter.into_iter().map(|item| {
+            match item {
+                core::result::Result::Ok(value) => value,
+                core::result::Result::Err(err) => {
+                    panic!("failed to compute sum, encountered an `Err` value: {err:?}")
+                }
+            }
+        });
+
+        Result::Ok(V::sum(values))
+    }
+}
+
+impl<A, V: Sum<A>> Sum<Option<A>> for Result<V> {
+    #[track_caller]
+    #[inline]
+    fn sum<I: Iterator<Item = Option<A>>>(iter: I) -> Self {
+        let values = iter.into_iter().map(|item| {
+            match item {
+                Some(value) => value,
+                None => {
+                    panic!("failed to compute sum, encountered a `None` value")
+                }
+            }
+        });
+
+        Result::Ok(V::sum(values.into_iter()))
+    }
+}
+
+impl<'a, T> IntoIterator for &'a Result<T> {
+    type Item = &'a T;
+
+    type IntoIter = core::array::IntoIter<&'a T, 1>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        [self.as_ok()].into_iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut Result<T> {
+    type Item = &'a mut T;
+
+    type IntoIter = core::array::IntoIter<&'a mut T, 1>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        [self.as_ok_mut()].into_iter()
+    }
+}
+
+impl<T> IntoIterator for Result<T> {
+    type Item = T;
+
+    type IntoIter = core::array::IntoIter<T, 1>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        [self.into_ok()].into_iter()
+    }
+}
+
+impl<T: PartialEq> PartialEq for Result<T> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.as_ok().eq(other.as_ok())
+    }
+}
+
+impl<T: Eq> Eq for Result<T> {}
+
+impl<T: PartialOrd> PartialOrd for Result<T> {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        self.as_ok().partial_cmp(other.as_ok())
+    }
+}
+
+impl<T: Ord> Ord for Result<T> {
+    #[inline]
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.as_ok().cmp(other.as_ok())
     }
 }
