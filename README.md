@@ -21,7 +21,7 @@ cargo-reedme: info-end -->
 ![msrv](https://img.shields.io/badge/msrv-nightly-blue?style=flat-square&logo=rust)
 [![github](https://img.shields.io/github/stars/nik-rev/evil)](https://github.com/nik-rev/evil)
 
-This crate lets you use the `?` operator as a shorthand for `.unwrap()`. Works on both [`Result`](https://doc.rust-lang.org/stable/core/result/enum.Result.html) and [`Option`](https://doc.rust-lang.org/stable/core/option/enum.Option.html)
+This crate lets you use the `?` operator as a shorthand for `.unwrap()`. Works on both [`Result`](https://doc.rust-lang.org/stable/core/result/enum.Result.html) and [`Option`](https://doc.rust-lang.org/stable/core/option/enum.Option.html).
 
 ```toml
 evil = "0.1"
@@ -83,7 +83,7 @@ Each one of those `?` is equivalent to a `.unwrap()`.
 
 ## Use the `evil` crate in scripts
 
-When writing small Rust scripts that will only be used by developers, `.unwrap()`ping everything instead of proper error handling is common. That’s okay.
+When writing small Rust scripts that will only be used by developers, `.unwrap()`ping everything instead of proper error handling is common.
 
 **But there is one huge disadvantage with that approach.**
 

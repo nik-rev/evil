@@ -4,7 +4,7 @@
 //! ![msrv](https://img.shields.io/badge/msrv-nightly-blue?style=flat-square&logo=rust)
 //! [![github](https://img.shields.io/github/stars/nik-rev/evil)](https://github.com/nik-rev/evil)
 //!
-//! This crate lets you use the `?` operator as a shorthand for `.unwrap()`. Works on both [`Result`](core::result::Result) and [`Option`](core::option::Option)
+//! This crate lets you use the `?` operator as a shorthand for `.unwrap()`. Works on both [`Result`](core::result::Result) and [`Option`](core::option::Option).
 //!
 //! ```toml
 #![doc = concat!(env!("CARGO_PKG_NAME"), " = ", "\"", env!("CARGO_PKG_VERSION_MAJOR"), ".", env!("CARGO_PKG_VERSION_MINOR"), "\"")]
@@ -70,7 +70,7 @@
 //!
 //! # Use the `evil` crate in scripts
 //!
-//! When writing small Rust scripts that will only be used by developers, `.unwrap()`ping everything instead of proper error handling is common. That's okay.
+//! When writing small Rust scripts that will only be used by developers, `.unwrap()`ping everything instead of proper error handling is common.
 //!
 //! **But there is one huge disadvantage with that approach.**
 //!
