@@ -1,6 +1,6 @@
 [package]
 name = "evil"
-description = "this crate allows using the ? operator as a shorthand for .unwrap()"
+description = "this crate allows using the ? operator as a shorthand for .unwrap() 😈"
 repository = "https://github.com/nik-rev/evil"
 authors = ["Nik Revenco <pm@nikrev.com>"]
 version = "0.1.0"
