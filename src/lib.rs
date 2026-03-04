@@ -176,7 +176,9 @@
 //!
 //! # How does it work?
 //!
-//! The `?` operator is syntax sugar for the [`Try`] trait. This expression:
+//! The `?` operator is syntax sugar for the [`Try`] trait, and its friends [`ControlFlow`] and [`FromResidual`].
+//!
+//! This expression:
 //!
 //! ```
 //! # /*
@@ -195,98 +197,148 @@
 //! # */
 //! ```
 //!
-//! Whatever `fetch()` returns, it must implement the `Try` trait. Assume that `fetch()` returns `Result<String, HtmlError>`, then `Try::branch` is this function:
+//! The return type of `fetch()` must implement the `Try` trait. In our example, `fetch()` returns `Result<String, FetchError>`.
+//!
+//! This is the implementation of `Try` for `Result`, which comes from the standard library:
 //!
 //! ```
 //! # /*
-//! <Result<String, HtmlError> as Try>::branch
-//! # */
-//! ```
+//! impl<T, E> Try for Result<T, E> {
+//!     type Residual = Result<!, E>;
 //!
-//! This implementation comes from the standard library. The function `branch` is this:
-//!
-//! ```
-//! # /*
-//! impl<T, E> ops::Try for Result<T, E> {
 //!     fn branch(self) -> ControlFlow<Self::Residual, T> {
 //!         match self {
 //!             Ok(c) => ControlFlow::Continue(c),
-//!             Err(e) => ControlFlow::Break(Err(e)),
+//!             Err(e) => ControlFlow::Break(Result::<!, E>::Err(e)),
 //!         }
 //!     }
 //! }
 //! # */
 //! ```
 //!
-//! Now, consider if `fetch()` returned an `Err(HtmlError)`. That means `branch` returned `ControlFlow::Break(Err(e))`. So our `match` becomes:
+//! > **What is that `type Residual`?**
+//! >
+//! > The "residual" is an "always-fail" version of a type implementing `Try`. For example:
+//! >
+//! > - For any `Option<T>`, the residual is `Option<!>`, which is always just `None` - because `Option::None` is considered the failure case of an `Option`. An `Option<!>` has no `Option::Some`, which means it is always `Option::None`
+//! > - For any `Result<T, E>`, the residual is `Result<!, E>` - because `Result::Err` is the failure case of a `Result`. A `Result<!, E>` has no `Result::Ok`, which means it is always `Result::Err`
+//!
+//! The `fetch()` call **failed** and it returned `Result::<String, FetchError>::Err(FetchError)`. Our `match` simplifies to:
 //!
 //! ```
 //! # /*
-//! let html = match ControlFlow::Break(Err(e)) {
+//! let html = match ControlFlow::Break(match Result::<String, FetchError>::Err(FetchError) {
+//!     Ok(c) => ControlFlow::Continue(c),
+//!     Err(e) => ControlFlow::Break(Result::<!, E>::Err(e)),
+//! }) {
 //!     ControlFlow::Continue(v) => v,
 //!     ControlFlow::Break(r) => return FromResidual::from_residual(r),
 //! };
 //! # */
 //! ```
 //!
-//! This hits the 2nd arm, and evaluates to this:
+//! Which then simplifies to:
 //!
 //! ```
 //! # /*
-//! let html = return FromResidual::from_residual(r);
+//! let html = match ControlFlow::Break(Result::<!, FetchError>::Err(FetchError)) {
+//!     ControlFlow::Continue(v) => v,
+//!     ControlFlow::Break(r) => return FromResidual::from_residual(r),
+//! };
+//! # */
+//! ```
+//!
+//! Which then simplifies to:
+//!
+//! ```
+//! # /*
+//! let html = return FromResidual::from_residual(Result::<!, FetchError>::Err(FetchError));
 //! # */
 //! ```
 //!
 //! We hit an error, and we do an **early return**. This is the short-circuiting behavior of the `?` operator.
 //!
-//! The `FromResidual` is a helper trait which tells us what exactly to return. The value of the expression `FromResidual::from_residual(r)` is determined by type inference.
-//!
-//! Let's say we are inside of a function that returns [`evil::Result`](Result):
+//! Now consider that the function we are inside returns a `evil::Result<()>`:
 //!
 //! ```
 //! # /*
 //! fn process_webpage() -> evil::Result<()> {
-//!     let html = return FromResidual::from_residual(r);
+//!     let html = return FromResidual::from_residual(Result::<!, FetchError>::Err(FetchError));
 //! }
 //! # */
 //! ```
 //!
-//! The type of `r` is `Result<!, HtmlError>`. This is the "residual", it is essentially an "always-fail" version of a type implementing `Try`:
+//! The `FromResidual` trait is generic. In the above example, the generic type parameter has been inferred to be whatever `from_residual` function needs to return.
 //!
-//! - For `Option<T>`, this is `Option<!>`, which is always just `Option::None` - because `None` is considered the failure case of an `Option`.
-//! - For any `Result<T, E>`, it is always `Result<!, E>` because `Result::Err` is the failure case of a `Result`
-//!
-//! So `r` has type `Result<!, HtmlError>` and expression `FromResidual::from_residual(r)` must have type `evil::Result<()>`
-//!
-//! This is the implementation that gets used:
+//! If we explicitly insert the inferred type, `evil::Result<()>`:
 //!
 //! ```
 //! # /*
-//! impl<T, E: Debug> FromResidual<core::result::Result<Infallible, E>> for Result<T> {
-//!     #[track_caller]
-//!     fn from_residual(residual: core::result::Result<Infallible, E>) -> Self {
-//!         let core::result::Result::Err(err) = residual;
-//!         panic!("invoked `?` on an `Err` value: {err:?}")
+//! fn process_webpage() -> evil::Result<()> {
+//!     let html = return FromResidual::<evil::Result<()>>::from_residual(Result::<!, FetchError>::Err(FetchError));
+//! }
+//! # */
+//! ```
+//!
+//! We cannot just return `Result<!, FetchError>` from the function, because it is a completely different type to `evil::Result<()>`. We must figure out how to convert from the former to the latter.
+//!
+//! That's where the `FromResidual` trait comes into play. It does just that.
+//!
+//! The implementation of `FromResidual` that gets used in this example is the following:
+//!
+//! ```
+//! # /*
+//! impl<T, E: Debug> FromResidual<Result<!, E>> for evil::Result<T> {
+//!     fn from_residual(residual: Result<!, E>) -> Self {
+//!         // ...
 //!     }
 //! }
 //! # */
 //! ```
 //!
-//! Because `Result<!, HtmlError>` is always an `Err`, we can just infallibly get the `Err` value:
+//! That `from_residual` is the magic sauce that tells us how we go from `Result<!, FetchError>` to `evil::Result<()>`.
+//!
+//! Whatever `from_residual` returns, *that's* what we will return from `process_webpage` function.
+//!
+//! When you use `?` on a `Result` type in a function that returns `Result`, the standard library implementation is used:
 //!
 //! ```
 //! # /*
-//! let core::result::Result::Err(err) = residual;
+//! impl<T, E, F: From<E>> FromResidual<Result<!, E>> for Result<T, F> {
+//!     fn from_residual(residual: Result<!, E>) -> Self {
+//!         match residual {
+//!             Err(e) => Err(From::from(e)),
+//!         }
+//!     }
+//! }
 //! # */
 //! ```
 //!
-//! Usually, this `from_residual` would actually return `Self` here - so we would *return* from the function `process_webpage`.
-//!
-//! But the way that [`evil::Result`](Result) implements `Try` is such that `panic!()` will be called instead:
+//! However, in our example, we're not converting from `Result` to `Result`. We're converting from `Result` to `evil::Result`, where a slightly implementation is used:
 //!
 //! ```
 //! # /*
-//! panic!("invoked `?` on an `Err` value: {err:?}")
+//! impl<T, E: Debug> FromResidual<Result<!, E>> for evil::Result<T> {
+//!     #[track_caller]
+//!     fn from_residual(residual: Result<!, E>) -> Self {
+//!         match residual {
+//!             Err(e) => Err(panic!("invoked `?` on an `Err` value: {e:?}"))
+//!         }
+//!     }
+//! }
+//! # */
+//! ```
+//!
+//! The only bit that's different here is that instead of returning `Result::Err`, we **panic**.
+//!
+//! Conceptually, `panic!()` "returns" the [`!`] type, hence `evil::Result` being defined as follows:
+//!
+//! ```
+//! # /*
+//! pub enum Result<T> {
+//!     Ok(T),
+//!     Err(!),
+//! }
 //! # */
 //! ```
 #![cfg_attr(not(feature = "std"), no_std)]
