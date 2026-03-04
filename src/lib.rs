@@ -253,7 +253,7 @@ impl<T> FromResidual<Result<Infallible>> for Result<T> {
 }
 
 /// You can invoke `?` on a [`evil::Result`](Result) from a try context of [`Result`](core::result::Result)
-impl<T, E> FromResidual<Result<Infallible>> for std::result::Result<T, E> {
+impl<T, E> FromResidual<Result<Infallible>> for core::result::Result<T, E> {
     fn from_residual(residual: Result<Infallible>) -> Self {
         match residual {}
     }
