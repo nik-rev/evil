@@ -32,6 +32,7 @@ fn std_option_context_evil_result() {
 
 /// You can call `?` on an [`evil::Result`] from a context that returns [`evil::Result`]
 #[test]
+#[cfg(feature = "std")]
 fn evil_result_context_evil_result() -> evil::Result<()> {
     let x: evil::Result<()> = evil::Ok(());
 
@@ -52,6 +53,7 @@ fn evil_result_context_std_result() -> Result<(), ()> {
 
 /// Extract the value from a [`Result`] using `?`
 #[test]
+#[cfg(feature = "std")]
 fn extract_value_from_std_result() -> evil::Result<()> {
     let x: Result<i32, &str> = Ok(42);
 
@@ -63,6 +65,7 @@ fn extract_value_from_std_result() -> evil::Result<()> {
 
 /// Extract the value from an [`Option`] using `?`
 #[test]
+#[cfg(feature = "std")]
 fn extract_value_from_std_option() -> evil::Result<()> {
     let x: Option<String> = Some("hello".to_string());
 
@@ -74,6 +77,7 @@ fn extract_value_from_std_option() -> evil::Result<()> {
 
 /// Extract the value from a [`evil::Result`] using `?`
 #[test]
+#[cfg(feature = "std")]
 fn extract_value_from_evil_result() -> evil::Result<()> {
     let x: evil::Result<f64> = evil::Ok(3.0);
 
