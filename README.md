@@ -162,7 +162,7 @@ Now, all the Nightly Rust components will be used for tests. You get to use unst
 But when it comes to shipping the code to users, the actual code will build on Stable Rust and not use any unstable features. I use [`cargo hack`](https://github.com/taiki-e/cargo-hack) in GitHub Actions CI to check that my project always builds with my MSRV:
 
 ```yml
-# This GitHub action on every commit to the `main` branch,
+# This GitHub runs action on every commit to the `main` branch,
 # and on every Pull Request
 
 name: Check
