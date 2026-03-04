@@ -24,7 +24,7 @@ cargo-reedme: info-end -->
 This crate lets you use the `?` operator as a shorthand for `.unwrap()`. Works on both [`Result`](https://doc.rust-lang.org/stable/core/result/enum.Result.html) and [`Option`](https://doc.rust-lang.org/stable/core/option/enum.Option.html)!
 
 ```toml
-evil = "0.1"
+evil = "0.2"
 ```
 
 ## Example
