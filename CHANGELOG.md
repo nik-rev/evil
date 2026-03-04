@@ -8,3 +8,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 [Unreleased]: https://github.com/nik-rev/evil/compare/v0.1.0...HEAD
+
+- Update `description` field
