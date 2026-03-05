@@ -176,9 +176,9 @@
 //!
 //! # How does it work?
 //!
-//! The `?` operator is syntax sugar for the [`Try`] trait, and its friends [`ControlFlow`] and [`FromResidual`].
+//! The `?` operator is syntax sugar for the [`Try`] trait, plus its friends [`ControlFlow`] and [`FromResidual`].
 //!
-//! This expression:
+//! Consider:
 //!
 //! ```
 //! # /*
@@ -186,7 +186,7 @@
 //! # */
 //! ```
 //!
-//! Desugars to the following:
+//! The above desugars to the following:
 //!
 //! ```
 //! # /*
@@ -270,7 +270,7 @@
 //!
 //! The `FromResidual` trait is generic. In the above example, the generic type parameter has been inferred to be whatever `from_residual` function needs to return.
 //!
-//! If we explicitly insert the inferred type, `evil::Result<()>`:
+//! Let's explicitly insert the inferred type, `evil::Result<()>`:
 //!
 //! ```
 //! # /*
@@ -280,11 +280,11 @@
 //! # */
 //! ```
 //!
-//! We cannot just return `Result<!, FetchError>` from the function, because it is a completely different type to `evil::Result<()>`. We must figure out how to convert from the former to the latter.
+//! We cannot just return `Result<!, FetchError>` from the function, because it is a completely different type to `evil::Result<()>`. We must figure out how to *convert* from the former to the latter.
 //!
 //! That's where the `FromResidual` trait comes into play. It does just that.
 //!
-//! The implementation of `FromResidual` that gets used in this example is the following:
+//! The implementation of `FromResidual` that gets used above is the following:
 //!
 //! ```
 //! # /*
@@ -314,7 +314,7 @@
 //! # */
 //! ```
 //!
-//! However, in our example, we're not converting from `Result` to `Result`. We're converting from `Result` to `evil::Result`, where a slightly implementation is used:
+//! However, in our example, we're not converting from `Result` to `Result`. We're converting from `Result` to `evil::Result`, where a slightly different implementation is used:
 //!
 //! ```
 //! # /*
@@ -331,7 +331,7 @@
 //!
 //! The only bit that's different here is that instead of returning `Result::Err`, we **panic**.
 //!
-//! Conceptually, `panic!()` "returns" the [`!`] type, hence `evil::Result` being defined as follows:
+//! Conceptually, `panic!()` "returns" the [`!`] type, hence `evil::Result` is defined as follows:
 //!
 //! ```
 //! # /*

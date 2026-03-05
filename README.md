@@ -187,15 +187,15 @@ jobs:
 
 ## How does it work?
 
-The `?` operator is syntax sugar for the [`Try`](https://doc.rust-lang.org/stable/core/ops/try_trait/trait.Try.html) trait, and its friends [`ControlFlow`](https://doc.rust-lang.org/stable/core/ops/control_flow/enum.ControlFlow.html) and [`FromResidual`](https://doc.rust-lang.org/stable/core/ops/try_trait/trait.FromResidual.html).
+The `?` operator is syntax sugar for the [`Try`](https://doc.rust-lang.org/stable/core/ops/try_trait/trait.Try.html) trait, plus its friends [`ControlFlow`](https://doc.rust-lang.org/stable/core/ops/control_flow/enum.ControlFlow.html) and [`FromResidual`](https://doc.rust-lang.org/stable/core/ops/try_trait/trait.FromResidual.html).
 
-This expression:
+Consider:
 
 ```rust
 let html = fetch()?;
 ```
 
-Desugars to the following:
+The above desugars to the following:
 
 ```rust
 let html = match Try::branch(fetch()) {
@@ -267,7 +267,7 @@ fn process_webpage() -> evil::Result<()> {
 
 The `FromResidual` trait is generic. In the above example, the generic type parameter has been inferred to be whatever `from_residual` function needs to return.
 
-If we explicitly insert the inferred type, `evil::Result<()>`:
+Let’s explicitly insert the inferred type, `evil::Result<()>`:
 
 ```rust
 fn process_webpage() -> evil::Result<()> {
@@ -275,11 +275,11 @@ fn process_webpage() -> evil::Result<()> {
 }
 ```
 
-We cannot just return `Result<!, FetchError>` from the function, because it is a completely different type to `evil::Result<()>`. We must figure out how to convert from the former to the latter.
+We cannot just return `Result<!, FetchError>` from the function, because it is a completely different type to `evil::Result<()>`. We must figure out how to *convert* from the former to the latter.
 
 That’s where the `FromResidual` trait comes into play. It does just that.
 
-The implementation of `FromResidual` that gets used in this example is the following:
+The implementation of `FromResidual` that gets used above is the following:
 
 ```rust
 impl<T, E: Debug> FromResidual<Result<!, E>> for evil::Result<T> {
@@ -305,7 +305,7 @@ impl<T, E, F: From<E>> FromResidual<Result<!, E>> for Result<T, F> {
 }
 ```
 
-However, in our example, we’re not converting from `Result` to `Result`. We’re converting from `Result` to `evil::Result`, where a slightly implementation is used:
+However, in our example, we’re not converting from `Result` to `Result`. We’re converting from `Result` to `evil::Result`, where a slightly different implementation is used:
 
 ```rust
 impl<T, E: Debug> FromResidual<Result<!, E>> for evil::Result<T> {
@@ -320,7 +320,7 @@ impl<T, E: Debug> FromResidual<Result<!, E>> for evil::Result<T> {
 
 The only bit that’s different here is that instead of returning `Result::Err`, we **panic**.
 
-Conceptually, `panic!()` “returns” the [`!`](https://doc.rust-lang.org/stable/std/primitive.never.html) type, hence `evil::Result` being defined as follows:
+Conceptually, `panic!()` “returns” the [`!`](https://doc.rust-lang.org/stable/std/primitive.never.html) type, hence `evil::Result` is defined as follows:
 
 ```rust
 pub enum Result<T> {
