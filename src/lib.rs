@@ -343,8 +343,12 @@
 //! ```
 #![cfg_attr(not(feature = "std"), no_std)]
 #![feature(try_trait_v2)]
+#![feature(try_trait_v2_residual)]
+// `never_type` is stable on recent nightlies, but older ones still need it
+#![allow(stable_features)]
 #![feature(never_type)]
 #![allow(rustdoc::invalid_rust_codeblocks)]
+#![allow(rustdoc::redundant_explicit_links)]
 
 use core::convert::Infallible;
 use core::fmt;
@@ -355,6 +359,7 @@ use core::iter::Product;
 use core::iter::Sum;
 use core::ops::ControlFlow;
 use core::ops::FromResidual;
+use core::ops::Residual;
 use core::ops::Try;
 use core::task::Poll;
 
@@ -450,6 +455,10 @@ impl<T> Try for Result<T> {
         let Result::Ok(value) = self;
         ControlFlow::Continue(value)
     }
+}
+
+impl<T> Residual<T> for Result<Infallible> {
+    type TryType = Result<T>;
 }
 
 impl<T> FromResidual<Option<Infallible>> for Result<T> {

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [Unreleased]: https://github.com/nik-rev/evil/compare/v0.2.2...HEAD
 
+### Fixed
+
+- Fixed compilation on latest nightly (`Try::Residual` now requires implementing the `Residual` trait, and `never_type` is stable)
+
 ## [v0.2.2] - 2026-03-05
 
 [v0.2.2]: https://github.com/nik-rev/evil/compare/v0.2.1...v0.2.2
